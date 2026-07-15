@@ -1,0 +1,13 @@
+:root{
+  --bg:#0B0F2B;
+  --accent:#4C1D95;
+  --glow:#818CF8;
+  --gold:#D4AF37;
+  --ink:#EDEAF6;
+  --dim:#a9a3c9;
+  --panel: rgba(20,16,40,0.55);
+  --border: rgba(212,175,55,0.25);
+}
+*{box-sizing:border-box;}
+html,body{margin:0;padding:0;height:100%;background:#050414;color:var(--ink);
+  font-family: Georgia, 'Times New Roman', serif; overflow-x:hidden;}
