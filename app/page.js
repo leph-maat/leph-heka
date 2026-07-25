@@ -86,7 +86,13 @@ export default function Page(){
     const uid = session.user.id
     const email = session.user.email
 
-    const { data: prof } = await supabase.from('profiles').select('*').eq('id', uid).maybeSingle()
+    let { data: prof } = await supabase.from('profiles').select('*').eq('id', uid).maybeSingle()
+    if(!prof){
+      const { data: created } = await supabase.from('profiles')
+        .insert({ id: uid, email, trial_start: new Date().toISOString() })
+        .select().maybeSingle()
+      prof = created
+    }
     setProfile(prof)
 
     const { data: ex } = await supabase.from('exempt_emails').select('email').eq('email', email).maybeSingle()
