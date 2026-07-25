@@ -2,6 +2,9 @@
 import { useState, useEffect, useRef } from 'react'
 import { supabase } from '../lib/supabaseClient'
 
+// Reemplazá este link cuando tengas tu link de pago de Mercado Pago
+const MERCADOPAGO_LINK = 'https://mpago.la/TU-LINK-ACA'
+
 const THEMES = {
   asombro:   { label:'Asombro',    bg:'#1a1206', accent:'#D4AF37', glow:'#F5D77A' },
   motivacion:{ label:'Motivación', bg:'#180022', accent:'#9333EA', glow:'#D946EF' },
@@ -22,11 +25,23 @@ function fmtLong(d){
   return d.toLocaleDateString('es-AR', { weekday:'long', day:'numeric', month:'long', year:'numeric' })
 }
 
+const REVEAL_MESSAGES = {
+  alto: 'Un mes entero, y tu voz no vaciló. Lo que escribiste en silencio, tu cuerpo ya empezó a creerlo. Esta es la lista que sembraste — mirala, y notá cuánto de vos ya es ella.',
+  medio: 'Hubo días de fuego y días de niebla, pero volviste una y otra vez. Eso también es voluntad — la que no se ve, la que insiste. Acá está lo que escribiste hace un mes. Leelo con los ojos de quien ya cambió un poco.',
+  bajo: 'El mes fue disperso — lo sabés mejor que nadie. Pero escribiste. Volviste, aunque sea a los tropezones. Esa constancia imperfecta también reconfigura algo. Acá está tu punto de partida, sin juicio, solo para que lo veas.',
+}
+
 export default function Page(){
   const [session, setSession] = useState(null)
   const [authEmail, setAuthEmail] = useState('')
   const [authPass, setAuthPass] = useState('')
   const [authMsg, setAuthMsg] = useState('')
+
+  const [profile, setProfile] = useState(null)
+  const [exempt, setExempt] = useState(false)
+  const [accessChecked, setAccessChecked] = useState(false)
+
+  const [reveal, setReveal] = useState(null) // { tier, message, metas } o null
 
   const [theme, setTheme] = useState('calma')
   const [ambient, setAmbient] = useState(false)
@@ -64,8 +79,81 @@ export default function Page(){
     setAuthMsg(error ? error.message : 'Cuenta creada. Revisá tu email si pide confirmación, o iniciá sesión.')
   }
 
+  // ---- Chequeo de acceso (exento / prueba / pago) ----
+  useEffect(()=>{ if(session) checkAccess() }, [session])
+
+  async function checkAccess(){
+    const uid = session.user.id
+    const email = session.user.email
+
+    const { data: prof } = await supabase.from('profiles').select('*').eq('id', uid).maybeSingle()
+    setProfile(prof)
+
+    const { data: ex } = await supabase.from('exempt_emails').select('email').eq('email', email).maybeSingle()
+    setExempt(!!ex)
+
+    setAccessChecked(true)
+    await loadDate(viewDate)
+    await checkMonthlyReveal(uid)
+  }
+
+  function hasAccess(){
+    if(exempt) return true
+    if(profile?.is_paid) return true
+    if(!profile?.trial_start) return false
+    const start = new Date(profile.trial_start)
+    const diffDays = (Date.now() - start.getTime()) / (1000*60*60*24)
+    return diffDays <= 3
+  }
+
+  function trialDaysLeft(){
+    if(!profile?.trial_start) return 0
+    const start = new Date(profile.trial_start)
+    const diffDays = (Date.now() - start.getTime()) / (1000*60*60*24)
+    return Math.max(0, Math.ceil(3 - diffDays))
+  }
+
+  // ---- Revelación sorpresa mensual (silenciosa, sin avisos previos) ----
+  async function checkMonthlyReveal(uid){
+    const { data: baseline } = await supabase.from('baseline').select('*').eq('user_id', uid).maybeSingle()
+    if(!baseline) return
+
+    const baselineDate = new Date(baseline.baseline_date)
+    const daysSince = Math.floor((today - baselineDate) / (1000*60*60*24))
+    const currentCycle = Math.floor(daysSince / 30)
+    if(currentCycle < 1) return
+
+    const { data: sm } = await supabase.from('streak_meta').select('*').eq('user_id', uid).maybeSingle()
+    const lastRevealedCycle = sm?.last_cycle_revealed
+      ? Math.floor((new Date(sm.last_cycle_revealed) - baselineDate) / (1000*60*60*24*30))
+      : -1
+    if(lastRevealedCycle >= currentCycle) return
+
+    // Contar candados abiertos en el ciclo de 30 días recién cumplido
+    const cycleStart = new Date(baselineDate); cycleStart.setDate(cycleStart.getDate() + (currentCycle-1)*30)
+    const cycleEnd = new Date(baselineDate); cycleEnd.setDate(cycleEnd.getDate() + currentCycle*30)
+    const rangeStart = new Date(cycleStart); rangeStart.setDate(rangeStart.getDate()-6)
+
+    const { data: weeks } = await supabase.from('week_locks')
+      .select('*').eq('user_id', uid)
+      .gte('week_start', toKey(rangeStart)).lte('week_start', toKey(cycleEnd))
+
+    let matched = 0
+    ;(weeks||[]).forEach(w=>{
+      ['mo','tu','we','th','fr','sa','su'].forEach(d=>{ if(w[d]) matched++ })
+    })
+
+    const tier = matched >= 24 ? 'alto' : matched >= 12 ? 'medio' : 'bajo'
+
+    setReveal({ tier, message: REVEAL_MESSAGES[tier], metas: baseline.metas, matched })
+
+    await supabase.from('streak_meta').upsert({
+      user_id: uid, last_cycle_revealed: toKey(today), streak: sm?.streak || 0
+    }, { onConflict: 'user_id' })
+  }
+
   // ---- Carga de datos al cambiar de fecha ----
-  useEffect(()=>{ if(session) loadDate(viewDate) }, [session, viewDate])
+  useEffect(()=>{ if(session && accessChecked) loadDate(viewDate) }, [viewDate])
 
   async function loadDate(d){
     const uid = session.user.id
@@ -208,6 +296,59 @@ export default function Page(){
     )
   }
 
+  // ---- Chequeando acceso ----
+  if(!accessChecked){
+    return (
+      <div style={{minHeight:'100vh', display:'flex', alignItems:'center', justifyContent:'center', background:'#050414', color:'#a9a3c9'}}>
+        Cargando...
+      </div>
+    )
+  }
+
+  // ---- Paywall (prueba vencida, no exento, no pagó) ----
+  if(!hasAccess()){
+    return (
+      <div style={{minHeight:'100vh', display:'flex', alignItems:'center', justifyContent:'center', background:'#050414', color:'#EDEAF6', padding:24}}>
+        <div style={{maxWidth:380, textAlign:'center'}}>
+          <h2 style={{color:'#D4AF37'}}>Leph - Heka</h2>
+          <p style={{color:'#a9a3c9', lineHeight:1.6}}>
+            Tu prueba de 3 días terminó. Si sentiste el enfoque, este es el momento de sostenerlo.
+          </p>
+          <a href={MERCADOPAGO_LINK} target="_blank" rel="noreferrer"
+            style={{display:'inline-block', margin:'16px 0', padding:'12px 28px', background:'#D4AF37', color:'#150f02', borderRadius:20, fontWeight:'bold', textDecoration:'none'}}>
+            Suscribirme
+          </a>
+          <p style={{color:'#818CF8', fontSize:13, fontStyle:'italic', lineHeight:1.6}}>
+            Y si no es ahora, llevate esto con vos: seguí escribiendo, aunque sea en papel. Eso ya vale.
+          </p>
+        </div>
+      </div>
+    )
+  }
+
+  // ---- Modal de revelación mensual ----
+  if(reveal){
+    return (
+      <div style={{minHeight:'100vh', display:'flex', alignItems:'center', justifyContent:'center', background:'#050414', color:'#EDEAF6', padding:24}}>
+        <div style={{maxWidth:500}}>
+          <h2 style={{color:'#D4AF37', textAlign:'center'}}>⟁</h2>
+          <p style={{fontStyle:'italic', lineHeight:1.7, textAlign:'center', color:'#EDEAF6'}}>{reveal.message}</p>
+          <div style={{border:'1px solid rgba(212,175,55,0.25)', borderRadius:10, padding:16, marginTop:20}}>
+            {reveal.metas.map((m,i)=>(
+              <p key={i} style={{margin:'6px 0', color:'#a9a3c9'}}>{i+1}. Yo {m}</p>
+            ))}
+          </div>
+          <div style={{textAlign:'center', marginTop:20}}>
+            <button onClick={()=>setReveal(null)}
+              style={{padding:'10px 24px', borderRadius:20, background:'#D4AF37', border:'none', fontWeight:'bold'}}>
+              Continuar
+            </button>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
   // ---- Diario ----
   const order = ['mo','tu','we','th','fr','sa','su']
   const labels = {mo:'Lun',tu:'Mar',we:'Mié',th:'Jue',fr:'Vie',sa:'Sáb',su:'Dom'}
@@ -220,6 +361,12 @@ export default function Page(){
         <p style={{textAlign:'center', fontStyle:'italic', color:'#a9a3c9'}}>
           "Tu destino lo determinan tus decisiones, no tus condiciones."
         </p>
+
+        {!exempt && !profile?.is_paid && (
+          <p style={{textAlign:'center', color:'#818CF8', fontSize:13}}>
+            Día {3 - trialDaysLeft() + 1} de 3 de tu prueba gratuita
+          </p>
+        )}
 
         <div style={{display:'flex', gap:8, justifyContent:'center', flexWrap:'wrap', margin:'16px 0'}}>
           {THEME_ORDER.map(k=>(
@@ -307,4 +454,4 @@ export default function Page(){
       </div>
     </div>
   )
-                                    }
+  }
