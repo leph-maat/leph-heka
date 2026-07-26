@@ -3,7 +3,7 @@ import { useState, useEffect, useRef } from 'react'
 import { supabase } from '../lib/supabaseClient'
 
 // Reemplazá este link cuando tengas tu link de pago de Mercado Pago
-const MERCADOPAGO_LINK = 'https://mpago.la/TU-LINK-ACA'
+const MERCADOPAGO_LINK = 'https://mpago.la/1o9RTMx'
 
 const THEMES = {
   asombro:   { label:'Asombro',    bg:'#1a1206', accent:'#D4AF37', glow:'#F5D77A' },
