@@ -78,14 +78,13 @@ export default function Page(){
     const { error } = await supabase.auth.signUp({ email: authEmail, password: authPass })
     setAuthMsg(error ? error.message : 'Cuenta creada. Revisá tu email si pide confirmación, o iniciá sesión.')
   }
-  async function handleForgotPassword(){
-        if(!authEmail){ setAuthMsg('Escribí tu email arriba primero, y tocá de nuevo.'); return }
-            setAuthMsg('Enviando link de recuperación...')
-                const { error } = await supabase.auth.resetPasswordForEmail(authEmail, {
-                      redirectTo: 'https://leph-heka.vercel.app/reset-password'
-                          })
-                              setAuthMsg(error ? error.message : 'Listo — revisá tu email para el link de recuperación.')
-                                }
+async function handleForgotPassword(){
+    if(!authEmail){ setAuthMsg('Escribí tu email arriba primero, y tocá de nuevo.'); return }
+    setAuthMsg('Enviando link de recuperación...')
+    const { error } = await supabase.auth.resetPasswordForEmail(authEmail, {
+      redirectTo: 'https://leph-heka.vercel.app/reset-password'
+    })
+    setAuthMsg(error ? error.message : 'Listo — revisá tu email para el link de recuperación.')
   }
 
   // ---- Chequeo de acceso (exento / prueba / pago) ----
