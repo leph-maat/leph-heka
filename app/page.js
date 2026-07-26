@@ -78,6 +78,15 @@ export default function Page(){
     const { error } = await supabase.auth.signUp({ email: authEmail, password: authPass })
     setAuthMsg(error ? error.message : 'Cuenta creada. Revisá tu email si pide confirmación, o iniciá sesión.')
   }
+  async function handleForgotPassword(){
+        if(!authEmail){ setAuthMsg('Escribí tu email arriba primero, y tocá de nuevo.'); return }
+            setAuthMsg('Enviando link de recuperación...')
+                const { error } = await supabase.auth.resetPasswordForEmail(authEmail, {
+                      redirectTo: 'https://leph-heka.vercel.app/reset-password'
+                          })
+                              setAuthMsg(error ? error.message : 'Listo — revisá tu email para el link de recuperación.')
+                                }
+  }
 
   // ---- Chequeo de acceso (exento / prueba / pago) ----
   useEffect(()=>{ if(session) checkAccess() }, [session])
@@ -296,6 +305,10 @@ export default function Page(){
             style={{width:'100%', padding:10, marginBottom:10}} />
           <button onClick={handleSignIn} style={{width:'100%', padding:10, marginBottom:8}}>Ingresar</button>
           <button onClick={handleSignUp} style={{width:'100%', padding:10}}>Crear cuenta</button>
+          <button type="button" onClick={handleForgotPassword}
+                      style={{width:'100%', padding:8, marginTop:8, background:'transparent', border:'none', color:'#818CF8', fontSize:13, textDecoration:'underline'}}>
+                                  ¿Olvidaste tu contraseña?
+                                            </button>
           <p style={{fontSize:12, color:'#a9a3c9', textAlign:'center'}}>{authMsg}</p>
         </form>
       </div>
