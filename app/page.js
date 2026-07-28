@@ -2,7 +2,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { supabase } from '../lib/supabaseClient'
 
-// Reemplazá este link cuando tengas tu link de pago de Mercado Pago
 const MERCADOPAGO_LINK = 'https://mpago.la/1o9RTMx'
 
 const THEMES = {
@@ -12,6 +11,13 @@ const THEMES = {
   foco:      { label:'Foco',       bg:'#050505', accent:'#00E5FF', glow:'#67E8F9' },
 }
 const THEME_ORDER = ['asombro','motivacion','calma','foco']
+
+const LAVA_THEMES = {
+  asombro:   { label:'Asombro',    bg:'#220f00', accent:'#FF8C00', glow:'#FFB84D' },
+  motivacion:{ label:'Motivación', bg:'#2d0a1a', accent:'#FF4500', glow:'#FF6B35' },
+  calma:     { label:'Calma',      bg:'#1a0a0f', accent:'#D2691E', glow:'#CD853F' },
+  foco:      { label:'Foco',       bg:'#1a0000', accent:'#FF6347', glow:'#FF7F50' },
+}
 
 function pad(n){ return n<10 ? '0'+n : ''+n }
 function toKey(d){ return d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate()) }
@@ -35,14 +41,16 @@ export default function Page(){
   const [session, setSession] = useState(null)
   const [authEmail, setAuthEmail] = useState('')
   const [authPass, setAuthPass] = useState('')
+  const [authPassConfirm, setAuthPassConfirm] = useState('')
   const [authMsg, setAuthMsg] = useState('')
+  const [isSignUp, setIsSignUp] = useState(false)
 
   const [profile, setProfile] = useState(null)
   const [exempt, setExempt] = useState(false)
   const [accessChecked, setAccessChecked] = useState(false)
+  const [reveal, setReveal] = useState(null)
 
-  const [reveal, setReveal] = useState(null) // { tier, message, metas } o null
-
+  const [visualMode, setVisualMode] = useState('orbes') // 'orbes' o 'lava'
   const [theme, setTheme] = useState('calma')
   const [ambient, setAmbient] = useState(false)
   const canvasRef = useRef(null)
@@ -61,6 +69,8 @@ export default function Page(){
   const [status, setStatus] = useState('')
   const [saving, setSaving] = useState(false)
 
+  const ACTIVE_THEMES = visualMode === 'orbes' ? THEMES : LAVA_THEMES
+
   // ---- Auth ----
   useEffect(()=>{
     supabase.auth.getSession().then(({data})=> setSession(data.session))
@@ -73,12 +83,18 @@ export default function Page(){
     const { error } = await supabase.auth.signInWithPassword({ email: authEmail, password: authPass })
     setAuthMsg(error ? error.message : '')
   }
+
   async function handleSignUp(e){
-    e.preventDefault(); setAuthMsg('Creando cuenta...')
+    e.preventDefault()
+    if(authPass !== authPassConfirm){ setAuthMsg('Las contraseñas no coinciden'); return }
+    if(authPass.length < 6){ setAuthMsg('La contraseña debe tener al menos 6 caracteres'); return }
+    setAuthMsg('Creando cuenta...')
     const { error } = await supabase.auth.signUp({ email: authEmail, password: authPass })
-    setAuthMsg(error ? error.message : 'Cuenta creada. Revisá tu email si pide confirmación, o iniciá sesión.')
+    setAuthMsg(error ? error.message : 'Cuenta creada. Ya podés iniciar sesión.')
+    if(!error){ setIsSignUp(false); setAuthEmail(''); setAuthPass(''); setAuthPassConfirm('') }
   }
-async function handleForgotPassword(){
+
+  async function handleForgotPassword(){
     if(!authEmail){ setAuthMsg('Escribí tu email arriba primero, y tocá de nuevo.'); return }
     setAuthMsg('Enviando link de recuperación...')
     const { error } = await supabase.auth.resetPasswordForEmail(authEmail, {
@@ -87,7 +103,7 @@ async function handleForgotPassword(){
     setAuthMsg(error ? error.message : 'Listo — revisá tu email para el link de recuperación.')
   }
 
-  // ---- Chequeo de acceso (exento / prueba / pago) ----
+  // ---- Chequeo de acceso ----
   useEffect(()=>{ if(session) checkAccess() }, [session])
 
   async function checkAccess(){
@@ -127,7 +143,6 @@ async function handleForgotPassword(){
     return Math.max(0, Math.ceil(3 - diffDays))
   }
 
-  // ---- Revelación sorpresa mensual (silenciosa, sin avisos previos) ----
   async function checkMonthlyReveal(uid){
     const { data: baseline } = await supabase.from('baseline').select('*').eq('user_id', uid).maybeSingle()
     if(!baseline) return
@@ -143,7 +158,6 @@ async function handleForgotPassword(){
       : -1
     if(lastRevealedCycle >= currentCycle) return
 
-    // Contar candados abiertos en el ciclo de 30 días recién cumplido
     const cycleStart = new Date(baselineDate); cycleStart.setDate(cycleStart.getDate() + (currentCycle-1)*30)
     const cycleEnd = new Date(baselineDate); cycleEnd.setDate(cycleEnd.getDate() + currentCycle*30)
     const rangeStart = new Date(cycleStart); rangeStart.setDate(rangeStart.getDate()-6)
@@ -158,7 +172,6 @@ async function handleForgotPassword(){
     })
 
     const tier = matched >= 24 ? 'alto' : matched >= 12 ? 'medio' : 'bajo'
-
     setReveal({ tier, message: REVEAL_MESSAGES[tier], metas: baseline.metas, matched })
 
     await supabase.from('streak_meta').upsert({
@@ -166,7 +179,6 @@ async function handleForgotPassword(){
     }, { onConflict: 'user_id' })
   }
 
-  // ---- Carga de datos al cambiar de fecha ----
   useEffect(()=>{ if(session && accessChecked) loadDate(viewDate) }, [viewDate])
 
   async function loadDate(d){
@@ -196,7 +208,6 @@ async function handleForgotPassword(){
     setStreak(sm?.streak || 0)
   }
 
-  // ---- Guardar ----
   async function handleSave(){
     setSaving(true); setStatus('Guardando...')
     const uid = session.user.id
@@ -238,7 +249,7 @@ async function handleForgotPassword(){
     setSaving(false)
   }
 
-  // ---- Fondo aurora ----
+  // ---- Fondo aurora/lava ----
   useEffect(()=>{
     const canvas = canvasRef.current
     if(!canvas) return
@@ -247,23 +258,30 @@ async function handleForgotPassword(){
     resize(); window.addEventListener('resize', resize)
 
     let t0 = 0, raf
-    const veils = [
-      { key:'glow', phx:0.7, phy:1.3, spx:0.06, spy:0.045, rx:0.55, alpha:0.30 },
-      { key:'accent', phx:2.1, phy:0.4, spx:0.05, spy:0.06, rx:0.42, alpha:0.24 },
-      { key:'gold', phx:4.0, phy:2.6, spx:0.045, spy:0.05, rx:0.36, alpha:0.16 },
-    ]
+    const veils = visualMode === 'orbes' 
+      ? [
+          { key:'glow', phx:0.7, phy:1.3, spx:0.06, spy:0.045, rx:0.55, alpha:0.30 },
+          { key:'accent', phx:2.1, phy:0.4, spx:0.05, spy:0.06, rx:0.42, alpha:0.24 },
+          { key:'gold', phx:4.0, phy:2.6, spx:0.045, spy:0.05, rx:0.36, alpha:0.16 },
+        ]
+      : [ // Lava mode: más dinámico, más movimiento
+          { key:'glow', phx:0.3, phy:0.8, spx:0.12, spy:0.08, rx:0.65, alpha:0.35 },
+          { key:'accent', phx:1.5, phy:2.1, spx:0.08, spy:0.12, rx:0.50, alpha:0.28 },
+          { key:'gold', phx:2.8, phy:1.2, spx:0.06, spy:0.09, rx:0.42, alpha:0.18 },
+        ]
+
     function hexToRgb(hex){ const n = parseInt(hex.replace('#',''),16); return [(n>>16)&255,(n>>8)&255,n&255] }
     function draw(){
-      t0 += 0.01
+      t0 += visualMode === 'lava' ? 0.015 : 0.01
       const w = canvas.width, h = canvas.height
-      const th = THEMES[theme]
+      const th = ACTIVE_THEMES[theme]
       ctx.globalCompositeOperation = 'source-over'
       ctx.globalAlpha = 1
       ctx.fillStyle = th.bg
       ctx.fillRect(0,0,w,h)
       ctx.globalCompositeOperation = 'lighter'
       veils.forEach(v=>{
-        const colorHex = v.key==='gold' ? '#D4AF37' : th[v.key]
+        const colorHex = v.key==='gold' ? (visualMode==='orbes' ? '#D4AF37' : '#FF8C00') : th[v.key]
         const [r,g,b] = hexToRgb(colorHex)
         const cx = w * (0.5 + Math.sin(t0*v.spx + v.phx) * 0.32)
         const cy = h * (0.42 + Math.cos(t0*v.spy + v.phy) * 0.22)
@@ -280,7 +298,7 @@ async function handleForgotPassword(){
     }
     draw()
     return ()=>{ cancelAnimationFrame(raf); window.removeEventListener('resize', resize) }
-  }, [theme])
+  }, [theme, visualMode])
 
   useEffect(()=>{
     if(!ambient) return
@@ -296,25 +314,56 @@ async function handleForgotPassword(){
   if(!session){
     return (
       <div style={{minHeight:'100vh', display:'flex', alignItems:'center', justifyContent:'center', background:'#050414', color:'#EDEAF6'}}>
-        <form style={{width:300, padding:24}}>
-          <h2 style={{color:'#D4AF37', textAlign:'center'}}>Leph - Heka</h2>
-          <input placeholder="email" value={authEmail} onChange={e=>setAuthEmail(e.target.value)}
-            style={{width:'100%', padding:10, marginBottom:10}} />
-          <input placeholder="contraseña" type="password" value={authPass} onChange={e=>setAuthPass(e.target.value)}
-            style={{width:'100%', padding:10, marginBottom:10}} />
-          <button onClick={handleSignIn} style={{width:'100%', padding:10, marginBottom:8}}>Ingresar</button>
-          <button onClick={handleSignUp} style={{width:'100%', padding:10}}>Crear cuenta</button>
-          <button type="button" onClick={handleForgotPassword}
-                      style={{width:'100%', padding:8, marginTop:8, background:'transparent', border:'none', color:'#818CF8', fontSize:13, textDecoration:'underline'}}>
-                                  ¿Olvidaste tu contraseña?
-                                            </button>
-          <p style={{fontSize:12, color:'#a9a3c9', textAlign:'center'}}>{authMsg}</p>
+        <form style={{width:320, padding:28}}>
+          <h2 style={{color:'#D4AF37', textAlign:'center', marginBottom:24}}>Leph - Heka</h2>
+
+          {!isSignUp ? (
+            <>
+              <input placeholder="email" value={authEmail} onChange={e=>setAuthEmail(e.target.value)}
+                style={{width:'100%', padding:10, marginBottom:10, background:'#1a1a2e', border:'1px solid rgba(212,175,55,0.3)', color:'#EDEAF6', borderRadius:6}} />
+              <input placeholder="contraseña" type="password" value={authPass} onChange={e=>setAuthPass(e.target.value)}
+                style={{width:'100%', padding:10, marginBottom:16, background:'#1a1a2e', border:'1px solid rgba(212,175,55,0.3)', color:'#EDEAF6', borderRadius:6}} />
+              <button onClick={handleSignIn} style={{width:'100%', padding:10, marginBottom:8, background:'#D4AF37', color:'#150f02', borderRadius:6, border:'none', fontWeight:'bold', cursor:'pointer'}}>
+                Ingresar
+              </button>
+              <button type="button" onClick={()=>{setIsSignUp(true); setAuthMsg('')}} 
+                style={{width:'100%', padding:10, background:'transparent', border:'1px solid #D4AF37', color:'#D4AF37', borderRadius:6, fontWeight:'bold', cursor:'pointer'}}>
+                Registrarse
+              </button>
+              <button type="button" onClick={handleForgotPassword}
+                style={{width:'100%', padding:8, marginTop:8, background:'transparent', border:'none', color:'#818CF8', fontSize:13, textDecoration:'underline', cursor:'pointer'}}>
+                ¿Olvidaste tu contraseña?
+              </button>
+            </>
+          ) : (
+            <>
+              <input placeholder="email" value={authEmail} onChange={e=>setAuthEmail(e.target.value)}
+                style={{width:'100%', padding:10, marginBottom:10, background:'#1a1a2e', border:'1px solid rgba(212,175,55,0.3)', color:'#EDEAF6', borderRadius:6}} />
+              <input placeholder="contraseña" type="password" value={authPass} onChange={e=>setAuthPass(e.target.value)}
+                style={{width:'100%', padding:10, marginBottom:10, background:'#1a1a2e', border:'1px solid rgba(212,175,55,0.3)', color:'#EDEAF6', borderRadius:6}} />
+              <input placeholder="confirmar contraseña" type="password" value={authPassConfirm} onChange={e=>setAuthPassConfirm(e.target.value)}
+                style={{width:'100%', padding:10, marginBottom:16, background:'#1a1a2e', border:'1px solid rgba(212,175,55,0.3)', color:'#EDEAF6', borderRadius:6}} />
+              <button onClick={handleSignUp} style={{width:'100%', padding:10, marginBottom:8, background:'#D4AF37', color:'#150f02', borderRadius:6, border:'none', fontWeight:'bold', cursor:'pointer'}}>
+                Crear cuenta
+              </button>
+              <button type="button" onClick={()=>{setIsSignUp(false); setAuthMsg('')}} 
+                style={{width:'100%', padding:10, background:'transparent', border:'1px solid #818CF8', color:'#818CF8', borderRadius:6, fontWeight:'bold', cursor:'pointer'}}>
+                ← Volver al login
+              </button>
+            </>
+          )}
+          <p style={{fontSize:12, color:'#a9a3c9', textAlign:'center', marginTop:12}}>{authMsg}</p>
+
+          <div style={{display:'flex', gap:8, marginTop:20, justifyContent:'center', flexWrap:'wrap', fontSize:12}}>
+            <a href="/legal" style={{color:'#818CF8', textDecoration:'none'}}>Privacidad</a>
+            <span style={{color:'#a9a3c9'}}>•</span>
+            <a href="/how-it-works" style={{color:'#818CF8', textDecoration:'none'}}>Cómo funciona</a>
+          </div>
         </form>
       </div>
     )
   }
 
-  // ---- Chequeando acceso ----
   if(!accessChecked){
     return (
       <div style={{minHeight:'100vh', display:'flex', alignItems:'center', justifyContent:'center', background:'#050414', color:'#a9a3c9'}}>
@@ -323,7 +372,6 @@ async function handleForgotPassword(){
     )
   }
 
-  // ---- Paywall (prueba vencida, no exento, no pagó) ----
   if(!hasAccess()){
     return (
       <div style={{minHeight:'100vh', display:'flex', alignItems:'center', justifyContent:'center', background:'#050414', color:'#EDEAF6', padding:24}}>
@@ -344,7 +392,6 @@ async function handleForgotPassword(){
     )
   }
 
-  // ---- Modal de revelación mensual ----
   if(reveal){
     return (
       <div style={{minHeight:'100vh', display:'flex', alignItems:'center', justifyContent:'center', background:'#050414', color:'#EDEAF6', padding:24}}>
@@ -367,7 +414,6 @@ async function handleForgotPassword(){
     )
   }
 
-  // ---- Diario ----
   const order = ['mo','tu','we','th','fr','sa','su']
   const labels = {mo:'Lun',tu:'Mar',we:'Mié',th:'Jue',fr:'Vie',sa:'Sáb',su:'Dom'}
 
@@ -389,20 +435,24 @@ async function handleForgotPassword(){
         <div style={{display:'flex', gap:8, justifyContent:'center', flexWrap:'wrap', margin:'16px 0'}}>
           {THEME_ORDER.map(k=>(
             <button key={k} onClick={()=>{ setAmbient(false); setTheme(k) }}
-              style={{padding:'6px 12px', borderRadius:20, border:'1px solid #D4AF37', color: theme===k?'#D4AF37':'#a9a3c9', background:'transparent'}}>
-              {THEMES[k].label}
+              style={{padding:'6px 12px', borderRadius:20, border:'1px solid #D4AF37', color: theme===k?'#D4AF37':'#a9a3c9', background:'transparent', cursor:'pointer'}}>
+              {ACTIVE_THEMES[k].label}
             </button>
           ))}
           <button onClick={()=>setAmbient(!ambient)}
-            style={{padding:'6px 12px', borderRadius:20, border:'1px solid #818CF8', color:'#818CF8', background: ambient?'rgba(129,140,248,0.15)':'transparent'}}>
-            {ambient ? '◈ Ambiente activo' : '◇ Modo Ambiente'}
+            style={{padding:'6px 12px', borderRadius:20, border:'1px solid #818CF8', color:'#818CF8', background: ambient?'rgba(129,140,248,0.15)':'transparent', cursor:'pointer'}}>
+            {ambient ? '◈ Ambiente' : '◇ Ambiente'}
+          </button>
+          <button onClick={()=>setVisualMode(visualMode==='orbes' ? 'lava' : 'orbes')}
+            style={{padding:'6px 12px', borderRadius:20, border:'1px solid #D4AF37', color:'#D4AF37', background:'transparent', cursor:'pointer', fontSize:12}}>
+            {visualMode === 'orbes' ? '🌋 Lava' : '✦ Orbes'}
           </button>
         </div>
 
         <div style={{display:'flex', justifyContent:'center', alignItems:'center', gap:16, marginBottom:20}}>
-          <button onClick={()=> setViewDate(d=>{ const n=new Date(d); n.setDate(n.getDate()-1); return n })}>‹</button>
+          <button onClick={()=> setViewDate(d=>{ const n=new Date(d); n.setDate(n.getDate()-1); return n })} style={{background:'transparent', border:'none', color:'#D4AF37', cursor:'pointer', fontSize:18}}>‹</button>
           <div>{fmtLong(viewDate)}</div>
-          <button disabled={isToday} onClick={()=> setViewDate(d=>{ const n=new Date(d); n.setDate(n.getDate()+1); return n })}>›</button>
+          <button disabled={isToday} onClick={()=> setViewDate(d=>{ const n=new Date(d); n.setDate(n.getDate()+1); return n })} style={{background:'transparent', border:'none', color:'#D4AF37', cursor:'pointer', fontSize:18, opacity: isToday ? 0.5 : 1}}>›</button>
         </div>
 
         <div style={{border:'1px solid rgba(212,175,55,0.25)', borderRadius:10, padding:16, marginBottom:20}}>
@@ -426,7 +476,7 @@ async function handleForgotPassword(){
                 <span style={{color:'#D4AF37', width:24}}>{i+1}.</span>
                 <input value={m} onChange={e=>{
                   const copy=[...metas]; copy[i]=e.target.value; setMetas(copy)
-                }} placeholder="Yo..." style={{flex:1, padding:8, background:'rgba(0,0,0,0.25)', border:'1px solid rgba(212,175,55,0.25)', color:'#EDEAF6'}} />
+                }} placeholder="Yo..." style={{flex:1, padding:8, background:'rgba(0,0,0,0.25)', border:'1px solid rgba(212,175,55,0.25)', color:'#EDEAF6', borderRadius:4}} />
               </div>
             ))
           ) : (
@@ -436,32 +486,32 @@ async function handleForgotPassword(){
 
         <div style={{border:'1px solid rgba(212,175,55,0.25)', borderRadius:10, padding:16, marginBottom:20}}>
           <h3 style={{color:'#D4AF37'}}>🐸 2. Planificación Diaria</h3>
-          <label>Sapo del día</label>
+          <label style={{display:'block', marginBottom:6, color:'#D4AF37'}}>Sapo del día</label>
           <input value={sapo} disabled={!isToday} onChange={e=>setSapo(e.target.value)}
-            style={{width:'100%', padding:8, background:'rgba(0,0,0,0.25)', border:'1px solid rgba(212,175,55,0.25)', color:'#EDEAF6', marginBottom:10}} />
+            style={{width:'100%', padding:8, background:'rgba(0,0,0,0.25)', border:'1px solid rgba(212,175,55,0.25)', color:'#EDEAF6', marginBottom:10, borderRadius:4}} />
           {['A','B','C','D','E'].map(L=>(
             <div key={L} style={{display:'flex', gap:8, marginBottom:6}}>
               <span style={{width:20, color:'#D4AF37'}}>{L}</span>
               <input value={abcde[L]} disabled={!isToday} onChange={e=>setAbcde({...abcde,[L]:e.target.value})}
-                style={{flex:1, padding:8, background:'rgba(0,0,0,0.25)', border:'1px solid rgba(212,175,55,0.25)', color:'#EDEAF6'}} />
+                style={{flex:1, padding:8, background:'rgba(0,0,0,0.25)', border:'1px solid rgba(212,175,55,0.25)', color:'#EDEAF6', borderRadius:4}} />
             </div>
           ))}
         </div>
 
         <div style={{border:'1px solid rgba(212,175,55,0.25)', borderRadius:10, padding:16, marginBottom:20}}>
           <h3 style={{color:'#D4AF37'}}>☾ 3. Cierre y Autoevaluación</h3>
-          <label>¿Qué hice bien hoy?</label>
+          <label style={{display:'block', marginBottom:6, color:'#D4AF37'}}>¿Qué hice bien hoy?</label>
           <textarea value={wentWell} disabled={!isToday} onChange={e=>setWentWell(e.target.value)}
-            style={{width:'100%', padding:8, background:'rgba(0,0,0,0.25)', border:'1px solid rgba(212,175,55,0.25)', color:'#EDEAF6', marginBottom:10}} rows={2} />
-          <label>¿Qué haría de manera diferente mañana?</label>
+            style={{width:'100%', padding:8, background:'rgba(0,0,0,0.25)', border:'1px solid rgba(212,175,55,0.25)', color:'#EDEAF6', marginBottom:10, borderRadius:4}} rows={2} />
+          <label style={{display:'block', marginBottom:6, color:'#D4AF37'}}>¿Qué haría de manera diferente mañana?</label>
           <textarea value={doDiff} disabled={!isToday} onChange={e=>setDoDiff(e.target.value)}
-            style={{width:'100%', padding:8, background:'rgba(0,0,0,0.25)', border:'1px solid rgba(212,175,55,0.25)', color:'#EDEAF6'}} rows={2} />
+            style={{width:'100%', padding:8, background:'rgba(0,0,0,0.25)', border:'1px solid rgba(212,175,55,0.25)', color:'#EDEAF6', borderRadius:4}} rows={2} />
         </div>
 
         {isToday && (
           <div style={{textAlign:'center'}}>
             <button onClick={handleSave} disabled={saving}
-              style={{padding:'10px 24px', borderRadius:20, background:'#D4AF37', border:'none', fontWeight:'bold'}}>
+              style={{padding:'10px 24px', borderRadius:20, background:'#D4AF37', border:'none', fontWeight:'bold', cursor:'pointer', opacity: saving ? 0.6 : 1}}>
               Guardar entrada
             </button>
             <p style={{color:'#818CF8', fontSize:13, marginTop:8}}>{status}</p>
@@ -472,4 +522,4 @@ async function handleForgotPassword(){
       </div>
     </div>
   )
-  }
+}
