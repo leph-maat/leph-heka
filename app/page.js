@@ -311,9 +311,8 @@ export default function Page(){
         t0 += 0.006
         const w = canvas.width, h = canvas.height
         const th = THEMES[theme]
+        ctx.clearRect(0,0,w,h)
         ctx.globalCompositeOperation = 'source-over'
-        ctx.fillStyle = th.bg
-        ctx.fillRect(0,0,w,h)
         const [ar,ag,ab] = hexToRgb(th.accent)
         const [gr,gg,gb] = hexToRgb(th.glow)
         blobs.forEach((b,i)=>{
@@ -347,7 +346,7 @@ export default function Page(){
   if(!session){
     return (
       <div style={{minHeight:'100vh', display:'flex', alignItems:'center', justifyContent:'center', background:'#050414', color:'#EDEAF6'}}>
-        <form style={{width:320, padding:28}}>
+        <form onSubmit={e=>e.preventDefault()} style={{width:320, padding:28}}>
           <h2 style={{color:'#D4AF37', textAlign:'center', marginBottom:24}}>Leph - Heka</h2>
 
           {!isSignUp ? (
@@ -456,8 +455,8 @@ export default function Page(){
 
   return (
     <div style={{position:'relative', minHeight:'100vh'}}>
-      <div style={{position:'fixed', inset:0, zIndex:0, filter: visualMode==='lava' ? 'blur(8px) contrast(28) brightness(0.95)' : 'none', overflow:'hidden'}}>
-        <canvas ref={canvasRef} style={{width:'100%', height:'100%', display:'block'}} />
+      <div style={{position:'fixed', inset:0, zIndex:0, background: THEMES[theme].bg, overflow:'hidden'}}>
+        <canvas ref={canvasRef} style={{width:'100%', height:'100%', display:'block', filter: visualMode==='lava' ? 'blur(10px) contrast(22)' : 'none'}} />
       </div>
       <div style={{position:'relative', zIndex:1, maxWidth:780, margin:'0 auto', padding:'32px 20px 80px'}}>
         <div style={{display:'flex', justifyContent:'flex-end', marginBottom:8}}>
