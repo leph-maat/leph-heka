@@ -6,18 +6,11 @@ const MERCADOPAGO_LINK = 'https://mpago.la/1o9RTMx'
 
 const THEMES = {
   asombro:   { label:'Asombro',    bg:'#1a1206', accent:'#D4AF37', glow:'#F5D77A' },
-  motivacion:{ label:'Motivación', bg:'#180022', accent:'#9333EA', glow:'#D946EF' },
+  motivacion:{ label:'Motivación', bg:'#210a17', accent:'#C23B6B', glow:'#FF7A45' },
   calma:     { label:'Calma',      bg:'#0B0F2B', accent:'#4C1D95', glow:'#818CF8' },
   foco:      { label:'Foco',       bg:'#050505', accent:'#00E5FF', glow:'#67E8F9' },
 }
 const THEME_ORDER = ['asombro','motivacion','calma','foco']
-
-const LAVA_THEMES = {
-  asombro:   { label:'Asombro',    bg:'#220f00', accent:'#FF8C00', glow:'#FFB84D' },
-  motivacion:{ label:'Motivación', bg:'#2d0a1a', accent:'#FF4500', glow:'#FF6B35' },
-  calma:     { label:'Calma',      bg:'#1a0a0f', accent:'#D2691E', glow:'#CD853F' },
-  foco:      { label:'Foco',       bg:'#1a0000', accent:'#FF6347', glow:'#FF7F50' },
-}
 
 function pad(n){ return n<10 ? '0'+n : ''+n }
 function toKey(d){ return d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate()) }
@@ -50,7 +43,7 @@ export default function Page(){
   const [accessChecked, setAccessChecked] = useState(false)
   const [reveal, setReveal] = useState(null)
 
-  const [visualMode, setVisualMode] = useState('orbes') // 'orbes' o 'lava'
+  const [visualMode, setVisualMode] = useState('orbes')
   const [theme, setTheme] = useState('calma')
   const [ambient, setAmbient] = useState(false)
   const canvasRef = useRef(null)
@@ -69,9 +62,8 @@ export default function Page(){
   const [status, setStatus] = useState('')
   const [saving, setSaving] = useState(false)
 
-  const ACTIVE_THEMES = visualMode === 'orbes' ? THEMES : LAVA_THEMES
+  const ACTIVE_THEMES = THEMES
 
-  // ---- Auth ----
   useEffect(()=>{
     supabase.auth.getSession().then(({data})=> setSession(data.session))
     const { data: listener } = supabase.auth.onAuthStateChange((_e, s)=> setSession(s))
@@ -103,7 +95,14 @@ export default function Page(){
     setAuthMsg(error ? error.message : 'Listo — revisá tu email para el link de recuperación.')
   }
 
-  // ---- Chequeo de acceso ----
+  async function handleLogout(){
+    await supabase.auth.signOut()
+    setProfile(null)
+    setExempt(false)
+    setAccessChecked(false)
+    setReveal(null)
+  }
+
   useEffect(()=>{ if(session) checkAccess() }, [session])
 
   async function checkAccess(){
@@ -141,6 +140,13 @@ export default function Page(){
     const start = new Date(profile.trial_start)
     const diffDays = (Date.now() - start.getTime()) / (1000*60*60*24)
     return Math.max(0, Math.ceil(3 - diffDays))
+  }
+
+  function accountStatusLabel(){
+    if(exempt) return { text: 'Cuenta exenta — acceso ilimitado', color: '#818CF8' }
+    if(profile?.is_paid) return { text: 'Suscripción activa — $6.000 ARS/mes', color: '#4ADE80' }
+    const left = trialDaysLeft()
+    return { text: `Prueba gratuita — ${left} día${left===1?'':'s'} restante${left===1?'':'s'}`, color: '#D4AF37' }
   }
 
   async function checkMonthlyReveal(uid){
@@ -249,7 +255,6 @@ export default function Page(){
     setSaving(false)
   }
 
-  // ---- Fondo aurora/lava ----
   useEffect(()=>{
     const canvas = canvasRef.current
     if(!canvas) return
@@ -258,45 +263,74 @@ export default function Page(){
     resize(); window.addEventListener('resize', resize)
 
     let t0 = 0, raf
-    const veils = visualMode === 'orbes' 
-      ? [
-          { key:'glow', phx:0.7, phy:1.3, spx:0.06, spy:0.045, rx:0.55, alpha:0.30 },
-          { key:'accent', phx:2.1, phy:0.4, spx:0.05, spy:0.06, rx:0.42, alpha:0.24 },
-          { key:'gold', phx:4.0, phy:2.6, spx:0.045, spy:0.05, rx:0.36, alpha:0.16 },
-        ]
-      : [ // Lava mode: más dinámico, más movimiento
-          { key:'glow', phx:0.3, phy:0.8, spx:0.12, spy:0.08, rx:0.65, alpha:0.35 },
-          { key:'accent', phx:1.5, phy:2.1, spx:0.08, spy:0.12, rx:0.50, alpha:0.28 },
-          { key:'gold', phx:2.8, phy:1.2, spx:0.06, spy:0.09, rx:0.42, alpha:0.18 },
-        ]
-
     function hexToRgb(hex){ const n = parseInt(hex.replace('#',''),16); return [(n>>16)&255,(n>>8)&255,n&255] }
-    function draw(){
-      t0 += visualMode === 'lava' ? 0.015 : 0.01
-      const w = canvas.width, h = canvas.height
-      const th = ACTIVE_THEMES[theme]
-      ctx.globalCompositeOperation = 'source-over'
-      ctx.globalAlpha = 1
-      ctx.fillStyle = th.bg
-      ctx.fillRect(0,0,w,h)
-      ctx.globalCompositeOperation = 'lighter'
-      veils.forEach(v=>{
-        const colorHex = v.key==='gold' ? (visualMode==='orbes' ? '#D4AF37' : '#FF8C00') : th[v.key]
-        const [r,g,b] = hexToRgb(colorHex)
-        const cx = w * (0.5 + Math.sin(t0*v.spx + v.phx) * 0.32)
-        const cy = h * (0.42 + Math.cos(t0*v.spy + v.phy) * 0.22)
-        const rad = Math.max(w,h) * (v.rx + Math.sin(t0*0.03+v.phx)*0.05)
-        const grad = ctx.createRadialGradient(cx,cy,0,cx,cy,rad)
-        grad.addColorStop(0, `rgba(${r},${g},${b},${v.alpha})`)
-        grad.addColorStop(1, `rgba(${r},${g},${b},0)`)
-        ctx.fillStyle = grad
-        ctx.beginPath()
-        ctx.ellipse(cx,cy,rad,rad*0.7,0,0,Math.PI*2)
-        ctx.fill()
-      })
-      raf = requestAnimationFrame(draw)
+
+    if(visualMode === 'orbes'){
+      const veils = [
+        { key:'glow', phx:0.7, phy:1.3, spx:0.06, spy:0.045, rx:0.55, alpha:0.30 },
+        { key:'accent', phx:2.1, phy:0.4, spx:0.05, spy:0.06, rx:0.42, alpha:0.24 },
+        { key:'gold', phx:4.0, phy:2.6, spx:0.045, spy:0.05, rx:0.36, alpha:0.16 },
+      ]
+      function draw(){
+        t0 += 0.01
+        const w = canvas.width, h = canvas.height
+        const th = THEMES[theme]
+        ctx.globalCompositeOperation = 'source-over'
+        ctx.globalAlpha = 1
+        ctx.fillStyle = th.bg
+        ctx.fillRect(0,0,w,h)
+        ctx.globalCompositeOperation = 'lighter'
+        veils.forEach(v=>{
+          const colorHex = v.key==='gold' ? '#D4AF37' : th[v.key]
+          const [r,g,b] = hexToRgb(colorHex)
+          const cx = w * (0.5 + Math.sin(t0*v.spx + v.phx) * 0.32)
+          const cy = h * (0.42 + Math.cos(t0*v.spy + v.phy) * 0.22)
+          const rad = Math.max(w,h) * (v.rx + Math.sin(t0*0.03+v.phx)*0.05)
+          const grad = ctx.createRadialGradient(cx,cy,0,cx,cy,rad)
+          grad.addColorStop(0, `rgba(${r},${g},${b},${v.alpha})`)
+          grad.addColorStop(1, `rgba(${r},${g},${b},0)`)
+          ctx.fillStyle = grad
+          ctx.beginPath()
+          ctx.ellipse(cx,cy,rad,rad*0.7,0,0,Math.PI*2)
+          ctx.fill()
+        })
+        raf = requestAnimationFrame(draw)
+      }
+      draw()
+    } else {
+      // Modo Lava: mismo tema activo (Asombro/Motivación/Calma/Foco), 
+      // pero renderizado como blobs que se funden entre sí (estilo lámpara de lava)
+      const blobs = Array.from({length:7}).map((_,i)=>({
+        baseX: 0.15 + (i%4)*0.25 + Math.random()*0.1,
+        speed: 0.15 + Math.random()*0.2,
+        phase: Math.random()*10,
+        baseR: 0.09 + Math.random()*0.07,
+        dir: i%2===0 ? 1 : -1,
+      }))
+      function draw(){
+        t0 += 0.006
+        const w = canvas.width, h = canvas.height
+        const th = THEMES[theme]
+        ctx.globalCompositeOperation = 'source-over'
+        ctx.fillStyle = th.bg
+        ctx.fillRect(0,0,w,h)
+        const [ar,ag,ab] = hexToRgb(th.accent)
+        const [gr,gg,gb] = hexToRgb(th.glow)
+        blobs.forEach((b,i)=>{
+          const cx = w * (b.baseX + Math.sin(t0*b.speed*b.dir + b.phase) * 0.18)
+          const cy = h * ((0.15 + (i*0.7/blobs.length)) + Math.sin(t0*b.speed*0.7 + b.phase*1.3) * 0.5 + Math.sin(t0*0.15)*0.15)
+          const r = Math.max(w,h) * b.baseR * (1 + Math.sin(t0*0.5+b.phase)*0.25)
+          const [cr,cg,cb] = i % 2 === 0 ? [ar,ag,ab] : [gr,gg,gb]
+          ctx.fillStyle = `rgb(${cr},${cg},${cb})`
+          ctx.beginPath()
+          ctx.arc(cx, ((cy % (h*1.4)) + h*0.2) % (h*1.2) - h*0.1, r, 0, Math.PI*2)
+          ctx.fill()
+        })
+        raf = requestAnimationFrame(draw)
+      }
+      draw()
     }
-    draw()
+
     return ()=>{ cancelAnimationFrame(raf); window.removeEventListener('resize', resize) }
   }, [theme, visualMode])
 
@@ -310,7 +344,6 @@ export default function Page(){
     return ()=> clearInterval(id)
   }, [ambient])
 
-  // ---- Login screen ----
   if(!session){
     return (
       <div style={{minHeight:'100vh', display:'flex', alignItems:'center', justifyContent:'center', background:'#050414', color:'#EDEAF6'}}>
@@ -387,6 +420,9 @@ export default function Page(){
           <p style={{color:'#818CF8', fontSize:13, fontStyle:'italic', lineHeight:1.6}}>
             Y si no es ahora, llevate esto con vos: seguí escribiendo, aunque sea en papel. Eso ya vale.
           </p>
+          <button onClick={handleLogout} style={{marginTop:20, background:'transparent', border:'none', color:'#a9a3c9', fontSize:13, textDecoration:'underline', cursor:'pointer'}}>
+            Cerrar sesión
+          </button>
         </div>
       </div>
     )
@@ -416,21 +452,34 @@ export default function Page(){
 
   const order = ['mo','tu','we','th','fr','sa','su']
   const labels = {mo:'Lun',tu:'Mar',we:'Mié',th:'Jue',fr:'Vie',sa:'Sáb',su:'Dom'}
+  const acctStatus = accountStatusLabel()
 
   return (
     <div style={{position:'relative', minHeight:'100vh'}}>
-      <canvas ref={canvasRef} style={{position:'fixed', inset:0, zIndex:0}} />
+      <div style={{position:'fixed', inset:0, zIndex:0, filter: visualMode==='lava' ? 'blur(8px) contrast(28) brightness(0.95)' : 'none', overflow:'hidden'}}>
+        <canvas ref={canvasRef} style={{width:'100%', height:'100%', display:'block'}} />
+      </div>
       <div style={{position:'relative', zIndex:1, maxWidth:780, margin:'0 auto', padding:'32px 20px 80px'}}>
+        <div style={{display:'flex', justifyContent:'flex-end', marginBottom:8}}>
+          <button onClick={handleLogout} style={{background:'transparent', border:'none', color:'#a9a3c9', fontSize:12, textDecoration:'underline', cursor:'pointer'}}>
+            Cerrar sesión
+          </button>
+        </div>
+
         <h1 style={{textAlign:'center', color:'#D4AF37'}}>LEPH — HEKA</h1>
         <p style={{textAlign:'center', fontStyle:'italic', color:'#a9a3c9'}}>
           "Tu destino lo determinan tus decisiones, no tus condiciones."
         </p>
 
-        {!exempt && !profile?.is_paid && (
-          <p style={{textAlign:'center', color:'#818CF8', fontSize:13}}>
-            Día {3 - trialDaysLeft() + 1} de 3 de tu prueba gratuita
-          </p>
-        )}
+        <div style={{border:'1px solid rgba(212,175,55,0.25)', borderRadius:10, padding:'10px 16px', margin:'16px 0', textAlign:'center'}}>
+          <p style={{color: acctStatus.color, fontSize:13, margin:0}}>{acctStatus.text}</p>
+          {!exempt && !profile?.is_paid && (
+            <a href={MERCADOPAGO_LINK} target="_blank" rel="noreferrer"
+              style={{display:'inline-block', marginTop:8, padding:'6px 16px', background:'#D4AF37', color:'#150f02', borderRadius:16, fontSize:12, fontWeight:'bold', textDecoration:'none'}}>
+              Suscribirme
+            </a>
+          )}
+        </div>
 
         <div style={{display:'flex', gap:8, justifyContent:'center', flexWrap:'wrap', margin:'16px 0'}}>
           {THEME_ORDER.map(k=>(
@@ -518,7 +567,15 @@ export default function Page(){
           </div>
         )}
 
-        <p style={{textAlign:'center', color:'#a9a3c9', marginTop:30, fontSize:12}}>Leph ⟁ Heka</p>
+        <div style={{display:'flex', gap:8, marginTop:30, justifyContent:'center', flexWrap:'wrap', fontSize:12}}>
+          <a href="/legal" style={{color:'#818CF8', textDecoration:'none'}}>Privacidad y Términos</a>
+          <span style={{color:'#a9a3c9'}}>•</span>
+          <a href="/how-it-works" style={{color:'#818CF8', textDecoration:'none'}}>Cómo funciona</a>
+          <span style={{color:'#a9a3c9'}}>•</span>
+          <button onClick={handleLogout} style={{background:'transparent', border:'none', color:'#818CF8', fontSize:12, cursor:'pointer', padding:0}}>Cerrar sesión</button>
+        </div>
+
+        <p style={{textAlign:'center', color:'#a9a3c9', marginTop:12, fontSize:12}}>Leph ⟁ Heka</p>
       </div>
     </div>
   )
